@@ -114,17 +114,6 @@ function App() {
   // Feedback
   const [feedback, setFeedback] = useState(null);
 
-  // Hint
-  const [hintIds, setHintIds] = useState([]);
-  function handleHint() {
-    const all = getHints(shapeKey, selected);
-    if (all.length) {
-      setHintIds(all);
-      setTimeout(() => setHintIds([]), 4500);
-    } else {
-      setFeedback({ kind: 'info', text: 'Tidak ada petunjuk yang bisa diberikan untuk susunan saat ini. Coba urungkan atau mulai ulang.' });
-    }
-  }
 
   // Tweaks
   const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
