@@ -201,7 +201,7 @@ function buildCuboid() {
       uniqueNetCount: 11,
       uniqueNetText: 'Kubus memiliki 11 jaring-jaring unik (di luar rotasi & cermin).',
       faceTint: 'indigo',
-       geometricValidation: true,
+      geometricValidation: true,
     },
     slots, basePos, adjacency, canonicalNets,
     gridSize: { w: 5, h: 5 },
