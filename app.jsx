@@ -374,6 +374,10 @@ function App() {
               <span>/ {shape.meta.faceCount} sisi</span>
             </div>
             <div className="grp">
+              <button className="btn" onClick={handleHint}>
+                <svg className="ico" viewBox="0 0 20 20" fill="currentColor"><path d="M10 2a6 6 0 00-3.3 11.02V15a1 1 0 001 1h4.6a1 1 0 001-1v-1.98A6 6 0 0010 2z" /><path d="M7.5 18.5a1 1 0 011-1h3a1 1 0 110 2h-3a1 1 0 01-1-1z" /></svg>
+                Petunjuk
+              </button>
               <button className="btn" onClick={handleUndo} disabled={!(historyByShape[shapeKey] || []).length}>
                 <svg className="ico" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 14L4 9l5-5" /><path d="M4 9h10a4 4 0 014 4v3" /></svg>
                 Urungkan
