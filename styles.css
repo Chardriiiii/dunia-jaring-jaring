@@ -378,6 +378,10 @@ button {
   left: 50%;
   top: 50%;
   width: 0; height: 0;
+  /* Eases button-driven rotations; the drag handler sets transition:none so
+     mouse dragging stays perfectly 1:1 with the cursor. */
+  transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
 }
 .face-node {
   position: absolute;
@@ -392,17 +396,21 @@ button {
   display: grid; place-items: center;
   font-size: 11px;
   font-weight: 700;
-  color: rgba(255,255,255,0.92);
+  color: rgba(255,255,255,0.95);
   user-select: none;
+  /* Translucent panels: while a net is still being built it is OPEN, so from
+     some angles a wall sits in front of a cap. Glassy faces let the face behind
+     show THROUGH instead of being hidden — so a rectangle never looks like it
+     is covering / colliding with a triangle. Overlaps read as layered glass. */
+  opacity: 0.7;
   /* A crisp seam that traces each face outline — INCLUDING clip-path
      triangles, which a normal border can't follow. Every face thus reads as a
-     separate panel, so a triangle cap never looks merged with / overlapping the
-     rectangle it folds against. */
+     separate panel. */
   filter:
-    drop-shadow(0.5px 0 0 rgba(255,255,255,0.85))
-    drop-shadow(-0.5px 0 0 rgba(255,255,255,0.85))
-    drop-shadow(0 0.5px 0 rgba(255,255,255,0.85))
-    drop-shadow(0 -0.5px 0 rgba(255,255,255,0.85));
+    drop-shadow(0.5px 0 0 rgba(255,255,255,0.95))
+    drop-shadow(-0.5px 0 0 rgba(255,255,255,0.95))
+    drop-shadow(0 0.5px 0 rgba(255,255,255,0.95))
+    drop-shadow(0 -0.5px 0 rgba(255,255,255,0.95));
 }
 .face-shape.square {
   background: linear-gradient(135deg, var(--tint-indigo-deep), #6366F1);

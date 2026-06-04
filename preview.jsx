@@ -1,182 +1,68 @@
-// 3D fold preview using nested CSS 3D transforms.
-// Each face is a div positioned in its parent's local coordinate frame,
-// folded around its shared edge with the parent.
+// 3D fold preview — FLAT single-container render.
+//
+// All faces live in ONE `preserve-3d` scene, each positioned by a matrix3d that
+// fold3d.jsx computes from the face's REAL flat polygon (the same vertices the
+// 2D editor draws). The fold geometry is therefore identical to the validator —
+// what you lay out is exactly what folds, for every arrangement (strip, fan,
+// slant faces, …). No nested per-face frames, so no drift.
 
-const PREVIEW_CELL = 90; // pixels per grid unit in 3D preview
+const PREVIEW_CELL = 90; // pixels per grid unit in the 3D preview
 
-// Fold angle from flat (180° dihedral) to the target dihedral in the solid.
-function getFoldAngle(shapeKey, parentSlot, childSlot) {
-  if (shapeKey === 'cuboid') return 90;
-  if (shapeKey === 'triPrism') {
-    // rect-rect: cross-section equilateral triangle, dihedral 60° -> fold 120°
-    if (parentSlot.kind === 'square' && childSlot.kind === 'square') return 120;
-    return 90; // rect-triangle cap
-  }
-  if (shapeKey === 'triPyramid') return 109.47; // arccos(-1/3)
-  if (shapeKey === 'sqPyramid') {
-    // base-to-lateral fold = 180° - 54.74° = 125.26°
-    // lateral-to-lateral fold = 180° - 70.53° = 109.47°
-    if (parentSlot.kind === 'square' || childSlot.kind === 'square') return 125.26;
-    return 109.47;
-  }
-  return 90;
-}
+const { useMemo } = React;
 
-// Edge geometry in face's local pixel coordinates.
-// Returns { mid: [x,y], dir: [dx,dy] } for the named edge of a face.
-function edgeGeom(faceKind, w, h, edge) {
-  switch (faceKind) {
-    case 'square':
-      if (edge === 'top')    return { mid: [w/2, 0],   dir: [1, 0] };
-      if (edge === 'bottom') return { mid: [w/2, h],   dir: [1, 0] };
-      if (edge === 'left')   return { mid: [0, h/2],   dir: [0, 1] };
-      if (edge === 'right')  return { mid: [w, h/2],   dir: [0, 1] };
-      break;
-    case 'triUp':
-      // vertices: (w/2,0) apex, (0,h) BL, (w,h) BR
-      if (edge === 'base')  return { mid: [w/2, h],     dir: [1, 0] };
-      if (edge === 'left')  return { mid: [w/4, h/2],   dir: [-w/2, h] };
-      if (edge === 'right') return { mid: [3*w/4, h/2], dir: [w/2, h] };
-      break;
-    case 'triDown':
-      // vertices: (0,0) TL, (w,0) TR, (w/2,h) apex
-      if (edge === 'base')  return { mid: [w/2, 0],     dir: [1, 0] };
-      if (edge === 'left')  return { mid: [w/4, h/2],   dir: [w/2, h] };
-      if (edge === 'right') return { mid: [3*w/4, h/2], dir: [-w/2, h] };
-      break;
-    case 'triWest':
-      // vertices: (w,0) TR, (w,h) BR, (0, h/2) apex-left
-      if (edge === 'base')  return { mid: [w, h/2],     dir: [0, 1] };
-      if (edge === 'left')  return { mid: [w/2, h/4],   dir: [-w, h/2] };
-      if (edge === 'right') return { mid: [w/2, 3*h/4], dir: [-w, -h/2] };
-      break;
-    case 'triEast':
-      // vertices: (0,0) TL, (0,h) BL, (w, h/2) apex-right
-      if (edge === 'base')  return { mid: [0, h/2],     dir: [0, 1] };
-      if (edge === 'left')  return { mid: [w/2, h/4],   dir: [w, h/2] };
-      if (edge === 'right') return { mid: [w/2, 3*h/4], dir: [w, -h/2] };
-      break;
-  }
-  return { mid: [w/2, h/2], dir: [1, 0] };
-}
+// One folded face: a div the size of the face's flat bounding box, clipped to
+// the exact polygon outline and mapped into the folded world by `matrix`.
+function FaceTile({ face, tone }) {
+  const isTri = face.kind !== 'square';
+  let cls = 'face-shape';
+  cls += isTri ? ' triangle' : ' square';
+  if (tone) cls += ` tone-${tone}`;
+  if (face.isBase) cls += ' is-base';
 
-function dimsFor(slot) {
-  return { w: slot.gw * PREVIEW_CELL, h: slot.gh * PREVIEW_CELL };
-}
-
-function buildFoldTree(shape, selected) {
-  if (!selected.has(shape.basePos)) return null;
-  const visited = new Set([shape.basePos]);
-  function build(id) {
-    const slot = shape.slots.find(s => s.id === id);
-    const node = { id, slot, children: [] };
-    for (const n of (shape.adjacency[id] || [])) {
-      if (selected.has(n.id) && !visited.has(n.id)) {
-        visited.add(n.id);
-        const childNode = build(n.id);
-        const reverse = (shape.adjacency[n.id] || []).find(a => a.id === id);
-        node.children.push({
-          node: childNode,
-          parentEdge: n.edge,    // edge of PARENT shared with child
-          childHinge: reverse?.edge, // edge of CHILD shared with parent
-        });
-      }
-    }
-    return node;
-  }
-  return build(shape.basePos);
-}
-
-// ----- React components -----
-
-function FacePane({ slot, tone, isBase, w, h }) {
-  let shapeClass = 'face-shape';
-  if (slot.kind === 'square') shapeClass += ' square';
-  else if (slot.kind === 'triUp' || slot.kind === 'triDown' || slot.kind === 'triWest' || slot.kind === 'triEast') {
-    shapeClass += ' triangle';
-  }
-  if (tone) shapeClass += ` tone-${tone}`;
-  if (isBase) shapeClass += ' is-base';
-
-  let clipPath;
-  if (slot.kind === 'triUp')   clipPath = 'polygon(50% 0%, 100% 100%, 0% 100%)';
-  if (slot.kind === 'triDown') clipPath = 'polygon(0% 0%, 100% 0%, 50% 100%)';
-  if (slot.kind === 'triWest') clipPath = 'polygon(100% 0%, 100% 100%, 0% 50%)';
-  if (slot.kind === 'triEast') clipPath = 'polygon(0% 0%, 100% 50%, 0% 100%)';
-
-  return (
-    <div className={shapeClass} style={{ width: w, height: h, clipPath }}>
-      {isBase ? <span>ALAS</span> : null}
-    </div>
-  );
-}
-
-function FoldFace({ node, parentSlot, parentEdge, childHinge, shapeKey, tone, progress, foldDur, isBase, signs }) {
-  const { w, h } = dimsFor(node.slot);
-
-  let placement = {};
-  if (isBase) {
-    placement = {
-      left: -w / 2,
-      top: -h / 2,
-      transform: 'translateZ(0px)',
-    };
-  } else {
-    // Drive the fold from fold3d's EXACT matrix (shared with the validator) so
-    // the preview always matches the closure geometry. A solved sign (from
-    // window.solveSigns) is used when available; otherwise the heuristic in
-    // f3_childMatrix applies.
-    const sign = (signs && signs[node.slot.id] != null) ? signs[node.slot.id] : undefined;
-    let transform;
-    if (window._f3 && window._f3.childCssMatrix) {
-      transform = window._f3.childCssMatrix(
-        shapeKey, parentSlot, node.slot, parentEdge, childHinge, progress, sign, PREVIEW_CELL
-      );
-    } else {
-      transform = 'translateZ(0px)';
-    }
-    placement = {
-      left: 0,
-      top: 0,
-      transformOrigin: '0 0',
-      transform,
-    };
-  }
+  const clipPath = 'polygon(' +
+    face.clip.map(p => `${p[0].toFixed(2)}px ${p[1].toFixed(2)}px`).join(', ') +
+    ')';
 
   return (
     <div className="face-node" style={{
-      ...placement,
-      width: w, height: h,
-      '--fold-dur': `${foldDur}ms`,
+      position: 'absolute', left: 0, top: 0,
+      width: face.w, height: face.h,
+      transform: face.matrix,
+      transformOrigin: '0 0',
     }}>
-      <FacePane slot={node.slot} tone={tone} isBase={isBase} w={w} h={h} />
-      {node.children.map(child => (
-        <FoldFace key={child.node.id}
-                   node={child.node}
-                   parentSlot={node.slot}
-                   parentEdge={child.parentEdge}
-                   childHinge={child.childHinge}
-                   shapeKey={shapeKey}
-                   tone={tone}
-                   progress={progress}
-                   foldDur={foldDur}
-                   isBase={false}
-                   signs={signs} />
-      ))}
+      <div className={cls} style={{ width: face.w, height: face.h, clipPath }}>
+        {face.isBase ? (
+          <span className="face-label" style={{
+            position: 'absolute',
+            left: face.labelXY[0], top: face.labelXY[1],
+            transform: 'translate(-50%, -50%)',
+          }}>ALAS</span>
+        ) : null}
+      </div>
     </div>
   );
 }
 
 function FoldPreview({ shape, selected, progress, tone, sceneRot, foldDur }) {
-  const tree = useMemo(() => buildFoldTree(shape, selected), [shape, selected]);
-  // Solve correct fold directions once per arrangement (e.g. caps on lateral
-  // faces). Falls back to per-face heuristic when no closing solution exists.
+  // Solve correct fold directions for this arrangement; falls back to the
+  // "fold away" heuristic inside fold3d when no closing solution exists (so even
+  // an incomplete, open net still previews sensibly while being built).
   const signs = useMemo(() => {
     if (typeof solveSigns !== 'function') return null;
     try { return solveSigns(shape, new Set(selected)); } catch (e) { return null; }
   }, [shape, selected]);
 
-  if (!tree) {
+  const faces = useMemo(() => {
+    if (!selected.has(shape.basePos)) return null;
+    if (!(window._f3 && window._f3.faceMatrices)) return null;
+    try {
+      return window._f3.faceMatrices(shape, selected, progress, signs, PREVIEW_CELL);
+    } catch (e) {
+      return null;
+    }
+  }, [shape, selected, progress, signs]);
+
+  if (!faces || faces.length === 0) {
     return (
       <div className="preview-empty">
         <svg viewBox="0 0 64 64" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -192,14 +78,9 @@ function FoldPreview({ shape, selected, progress, tone, sceneRot, foldDur }) {
     <div className="preview-scene">
       <div className="scene-rot" style={{
         transform: `rotateX(${sceneRot.x}deg) rotateY(${sceneRot.y}deg) rotateZ(${sceneRot.z || 0}deg)`,
+        transition: foldDur ? `transform 0ms` : undefined,
       }}>
-        <FoldFace node={tree}
-                   shapeKey={shape.meta.key}
-                   tone={tone}
-                   progress={progress}
-                   foldDur={foldDur}
-                   isBase={true}
-                   signs={signs} />
+        {faces.map(f => <FaceTile key={f.id} face={f} tone={tone} />)}
       </div>
     </div>
   );

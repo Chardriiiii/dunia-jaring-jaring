@@ -194,12 +194,12 @@ function buildCuboid() {
   return {
     meta: {
       key: 'cuboid',
-      name: 'Prisma Segiempat (Balok)',
-      shortName: 'Balok',
-      faceComposition: '6 persegi panjang',
+      name: 'Kubus',
+      shortName: 'Kubus',
+      faceComposition: '6 persegi',
       faceCount: 6,
       uniqueNetCount: 11,
-      uniqueNetText: 'Balok memiliki 11 jaring-jaring unik (di luar rotasi & cermin).',
+      uniqueNetText: 'Kubus memiliki 11 jaring-jaring unik (di luar rotasi & cermin).',
       faceTint: 'indigo',
     },
     slots, basePos, adjacency, canonicalNets,
@@ -507,16 +507,59 @@ function buildSquarePyramid() {
     slots.push({ id: `triR_${r}_${c}`, kind: 'triEast', gx: c + 1,   gy: r,     gw: h, gh: 1 });
   }
 
-  // Secondary "slant" triangles attached to the 4 primaries around sq_1_1.
-  // Each secondary mirrors its primary across a slant edge — they form a rhombus in 2D.
-  slots.push({ id: 'triTL_s', kind: 'triDown', gx: 0.5,   gy: 1 - h, gw: 1, gh: h });
-  slots.push({ id: 'triTR_s', kind: 'triDown', gx: 1.5,   gy: 1 - h, gw: 1, gh: h });
-  slots.push({ id: 'triBL_s', kind: 'triUp',   gx: 0.5,   gy: 2,     gw: 1, gh: h });
-  slots.push({ id: 'triBR_s', kind: 'triUp',   gx: 1.5,   gy: 2,     gw: 1, gh: h });
-  slots.push({ id: 'triLT_s', kind: 'triEast', gx: 1 - h, gy: 0.5,   gw: h, gh: 1 });
-  slots.push({ id: 'triLB_s', kind: 'triEast', gx: 1 - h, gy: 1.5,   gw: h, gh: 1 });
-  slots.push({ id: 'triRT_s', kind: 'triWest', gx: 2,     gy: 0.5,   gw: h, gh: 1 });
-  slots.push({ id: 'triRB_s', kind: 'triWest', gx: 2,     gy: 1.5,   gw: h, gh: 1 });
+  // Secondary "slant" triangles: a lateral face hung off a SLANT edge of one of
+  // the 4 primary triangles around the base. This enables "fan/kipas" nets where
+  // faces cascade off each other (e.g. base + top face + left & right faces
+  // fanning from the top face's slants + bottom face) instead of every triangle
+  // attaching directly to the base. Each is an equilateral face whose BASE edge
+  // hinges onto the parent's slant edge — the same robust pattern the prism uses,
+  // so the 3D fold closes correctly.
+  const sqLocalCentroid = (kind, w, hh) => {
+    const vs = kind === 'triUp'   ? [[w/2,0],[w,hh],[0,hh]]
+             : kind === 'triDown' ? [[0,0],[w,0],[w/2,hh]]
+             : kind === 'triWest' ? [[w,0],[w,hh],[0,hh/2]]
+             :                      [[0,0],[0,hh],[w,hh/2]];
+    return [(vs[0][0]+vs[1][0]+vs[2][0])/3, (vs[0][1]+vs[1][1]+vs[2][1])/3];
+  };
+  const sqSlantGeom = (kind, w, hh, edge) => {
+    if (kind === 'triUp')   return edge === 'left' ? { mid:[w/4,hh/2],   dir:[-w/2,hh] } : { mid:[3*w/4,hh/2], dir:[w/2,hh] };
+    if (kind === 'triDown') return edge === 'left' ? { mid:[w/4,hh/2],   dir:[w/2,hh]  } : { mid:[3*w/4,hh/2], dir:[-w/2,hh] };
+    if (kind === 'triWest') return edge === 'left' ? { mid:[w/2,hh/4],   dir:[-w,hh/2] } : { mid:[w/2,3*hh/4], dir:[-w,-hh/2] };
+    return                         edge === 'left' ? { mid:[w/2,hh/4],   dir:[w,hh/2]  } : { mid:[w/2,3*hh/4], dir:[w,-hh/2] };
+  };
+  // secondary id -> [primary id, which slant edge of the primary]
+  const secDefs = {
+    triTL_s: ['triT_1_1','left'],  triTR_s: ['triT_1_1','right'],
+    triBL_s: ['triB_1_1','left'],  triBR_s: ['triB_1_1','right'],
+    triLT_s: ['triL_1_1','left'],  triLB_s: ['triL_1_1','right'],
+    triRT_s: ['triR_1_1','left'],  triRB_s: ['triR_1_1','right'],
+  };
+  const sqSlotById = {};
+  for (const s of slots) sqSlotById[s.id] = s;
+  const secInfo = {}; // id -> { prim, edge } for adjacency wiring below
+  for (const sid in secDefs) {
+    const [primId, edge] = secDefs[sid];
+    const p = sqSlotById[primId];
+    const g = sqSlantGeom(p.kind, p.gw, p.gh, edge);
+    const Mx = p.gx + g.mid[0], My = p.gy + g.mid[1];
+    let Nx = -g.dir[1], Ny = g.dir[0];
+    const nl = Math.hypot(Nx, Ny) || 1; Nx /= nl; Ny /= nl;
+    // point the normal AWAY from the primary's body
+    const pc = sqLocalCentroid(p.kind, p.gw, p.gh);
+    const toPx = (p.gx + pc[0]) - Mx, toPy = (p.gy + pc[1]) - My;
+    if (Nx * toPx + Ny * toPy > 0) { Nx = -Nx; Ny = -Ny; }
+    const b1 = [Mx - 0.5 * g.dir[0], My - 0.5 * g.dir[1]];
+    const b2 = [Mx + 0.5 * g.dir[0], My + 0.5 * g.dir[1]];
+    const apex = [Mx + Nx * h, My + Ny * h];
+    slots.push({
+      id: sid, kind: 'triUp', gw: 1, gh: h,
+      gx: Math.min(b1[0], b2[0], apex[0]),
+      gy: Math.min(b1[1], b2[1], apex[1]),
+      verts: [b1, b2, apex],
+      slantOf: primId, slantEdge: edge,
+    });
+    secInfo[sid] = { prim: primId, edge };
+  }
 
   const basePos = 'sq_1_1';
   const adjacency = {};
@@ -539,24 +582,14 @@ function buildSquarePyramid() {
     }
   }
 
-  // Slant adjacencies for secondaries (and back-references on the primaries)
-  // For sq_1_1's 4 primaries: each gets 2 secondary triangles attached to its slant edges.
-  adjacency['triTL_s'] = [{ id: 'triT_1_1', edge: 'right' }];
-  adjacency['triT_1_1'].push({ id: 'triTL_s', edge: 'left' });
-  adjacency['triTR_s'] = [{ id: 'triT_1_1', edge: 'left' }];
-  adjacency['triT_1_1'].push({ id: 'triTR_s', edge: 'right' });
-  adjacency['triBL_s'] = [{ id: 'triB_1_1', edge: 'right' }];
-  adjacency['triB_1_1'].push({ id: 'triBL_s', edge: 'left' });
-  adjacency['triBR_s'] = [{ id: 'triB_1_1', edge: 'left' }];
-  adjacency['triB_1_1'].push({ id: 'triBR_s', edge: 'right' });
-  adjacency['triLT_s'] = [{ id: 'triL_1_1', edge: 'right' }];
-  adjacency['triL_1_1'].push({ id: 'triLT_s', edge: 'left' });
-  adjacency['triLB_s'] = [{ id: 'triL_1_1', edge: 'left' }];
-  adjacency['triL_1_1'].push({ id: 'triLB_s', edge: 'right' });
-  adjacency['triRT_s'] = [{ id: 'triR_1_1', edge: 'right' }];
-  adjacency['triR_1_1'].push({ id: 'triRT_s', edge: 'left' });
-  adjacency['triRB_s'] = [{ id: 'triR_1_1', edge: 'left' }];
-  adjacency['triR_1_1'].push({ id: 'triRB_s', edge: 'right' });
+  // Slant adjacencies for secondaries: each secondary's BASE edge hinges onto
+  // the parent primary's slant edge (parentEdge = 'left'/'right'), and the
+  // secondary's own hinge is its 'base' edge.
+  for (const sid in secInfo) {
+    const { prim, edge } = secInfo[sid];
+    adjacency[sid] = [{ id: prim, edge: 'base' }];
+    adjacency[prim].push({ id: sid, edge });
+  }
 
   // Enumerate valid nets. Each face role (N/S/W/E) must be covered exactly once.
   // Each secondary needs its primary present (the primary lives in a DIFFERENT face role).

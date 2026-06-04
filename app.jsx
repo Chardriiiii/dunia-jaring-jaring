@@ -100,23 +100,16 @@ function App() {
     try {localStorage.setItem('pmbt_tut_seen', '1');} catch (e) {}
   }
 
-  // Scoring
-  const [score, setScore] = useState(() => {
-    try {return Number(localStorage.getItem('pmbt_score') || 0);} catch (e) {return 0;}
-  });
-  const [streak, setStreak] = useState(() => {
-    try {return Number(localStorage.getItem('pmbt_streak') || 0);} catch (e) {return 0;}
-  });
-  const [attempts, setAttempts] = useState(() => {
-    try {return Number(localStorage.getItem('pmbt_attempts') || 0);} catch (e) {return 0;}
+  // Progress tracking: which DISTINCT correct nets the user has found, per shape.
+  // Stored as { shapeKey: [netKey, ...] }. Re-discovering the same arrangement
+  // does NOT increase the count.
+  const [correctByShape, setCorrectByShape] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('pmbt_correct') || '{}'); } catch (e) { return {}; }
   });
   useEffect(() => {
-    try {
-      localStorage.setItem('pmbt_score', String(score));
-      localStorage.setItem('pmbt_streak', String(streak));
-      localStorage.setItem('pmbt_attempts', String(attempts));
-    } catch (e) {}
-  }, [score, streak, attempts]);
+    try { localStorage.setItem('pmbt_correct', JSON.stringify(correctByShape)); } catch (e) {}
+  }, [correctByShape]);
+  const correctCount = (correctByShape[shapeKey] || []).length;
 
   // Feedback
   const [feedback, setFeedback] = useState(null);
@@ -153,18 +146,21 @@ function App() {
   // Validate handler
   function handleValidate() {
     const result = validateNet(shapeKey, selected);
-    setAttempts((a) => a + 1);
     if (result.ok) {
       setFeedback({ kind: 'ok', text: result.reason });
-      setScore((s) => s + 10);
-      setStreak((s) => s + 1);
+      // Count only NEW (not-yet-found) arrangements for this shape.
+      const key = [...selected].sort().join('|');
+      setCorrectByShape((m) => {
+        const found = m[shapeKey] || [];
+        if (found.includes(key)) return m; // already counted — no increment
+        return { ...m, [shapeKey]: [...found, key] };
+      });
       setValidated(true);
       celebrate();
       // Animate fold to 1
       animateProgressTo(1, foldDuration());
     } else {
       setFeedback({ kind: 'err', text: result.reason });
-      setStreak(0);
       setValidated(false);
     }
   }
@@ -215,40 +211,65 @@ function App() {
 
   // Scene drag-to-rotate
   const sceneRef = useRef(null);
+  // Keep a mutable mirror of the rotation so the drag handler (attached ONCE)
+  // always sees the latest committed value without re-subscribing.
+  const rotRef = useRef(sceneRot);
+  useEffect(() => { rotRef.current = sceneRot; }, [sceneRot]);
+
   useEffect(() => {
     const el = sceneRef.current;
     if (!el) return;
     let dragging = false;
     let startX, startY, startRot;
+    let live = null;     // rotation being dragged (not yet committed to state)
+    let rafId = 0;
+    let sceneEl = null;  // the .scene-rot element we mutate directly
+
+    // Write the transform straight to the DOM — bypassing React entirely — so a
+    // drag never re-renders the (expensive) 3D face tree. We only commit to
+    // React state once, on release. This is what makes dragging buttery.
+    function paint() {
+      rafId = 0;
+      if (!sceneEl || !live) return;
+      sceneEl.style.transform =
+        `rotateX(${live.x}deg) rotateY(${live.y}deg) rotateZ(${live.z || 0}deg)`;
+    }
+    function schedule() { if (!rafId) rafId = requestAnimationFrame(paint); }
+
     function onDown(e) {
       dragging = true;
       const p = e.touches ? e.touches[0] : e;
-      startX = p.clientX;startY = p.clientY;
-      startRot = { ...sceneRot };
+      startX = p.clientX; startY = p.clientY;
+      startRot = { ...rotRef.current };
+      live = { ...startRot };
+      sceneEl = el.querySelector('.scene-rot');
+      if (sceneEl) sceneEl.style.transition = 'none'; // no easing lag mid-drag
       el.style.cursor = 'grabbing';
     }
     function onMove(e) {
       if (!dragging) return;
+      if (e.cancelable) e.preventDefault();
       const p = e.touches ? e.touches[0] : e;
       const dx = p.clientX - startX;
       const dy = p.clientY - startY;
-      // Free rotation: no clamp on X so the user can flip the model.
+      // Free rotation: no clamp, so the user can flip the model completely.
       // Hold SHIFT to twist around the Z axis instead of pitching.
       if (e.shiftKey) {
-        setSceneRot({
-          x: startRot.x,
-          y: startRot.y,
-          z: startRot.z + dx * 0.5
-        });
+        live = { x: startRot.x, y: startRot.y, z: startRot.z + dx * 0.7 };
       } else {
-        setSceneRot({
-          x: startRot.x - dy * 0.6,
-          y: startRot.y + dx * 0.6,
-          z: startRot.z
-        });
+        live = { x: startRot.x - dy * 0.8, y: startRot.y + dx * 0.8, z: startRot.z };
       }
+      schedule();
     }
-    function onUp() {dragging = false;el.style.cursor = 'grab';}
+    function onUp() {
+      if (!dragging) return;
+      dragging = false;
+      el.style.cursor = 'grab';
+      if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
+      if (sceneEl) sceneEl.style.transition = '';
+      if (live) { rotRef.current = live; setSceneRot(live); } // commit once
+    }
+
     el.addEventListener('mousedown', onDown);
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
@@ -263,8 +284,9 @@ function App() {
       el.removeEventListener('touchstart', onDown);
       window.removeEventListener('touchmove', onMove);
       window.removeEventListener('touchend', onUp);
+      if (rafId) cancelAnimationFrame(rafId);
     };
-  }, [sceneRot]); // eslint-disable-line
+  }, []); // attach ONCE — no re-subscribe per frame
 
   // Narration based on current state
   const narrationText = useMemo(() => {
@@ -310,14 +332,9 @@ function App() {
         </div>
 
         <div className="topbar-stats">
-          <div className="stat-pill"><span className="lbl">Skor</span> <span className="val">{score}</span></div>
-          <div className="stat-pill streak">
-            <span className="lbl">Streak</span>
-            <span className="val">🔥 {streak}</span>
-          </div>
           <div className="stat-pill">
-            <span className="lbl">Percobaan</span>
-            <span className="val">{attempts}</span>
+            <span className="lbl">Benar &middot; {shape.meta.shortName}</span>
+            <span className="val">{correctCount}</span>
           </div>
         </div>
 
@@ -418,28 +435,6 @@ function App() {
 
             <div className="scene-controls" onClick={(e) => e.stopPropagation()}
             onMouseDown={(e) => e.stopPropagation()}>
-              <div className="sc-row">
-                <button title="Putar kiri (Y)" onClick={() => setSceneRot((s) => ({ ...s, y: s.y - 18 }))}>
-                  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 4l-6 6 6 6" /></svg>
-                </button>
-                <button title="Atas (X)" onClick={() => setSceneRot((s) => ({ ...s, x: s.x - 15 }))}>
-                  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 14l6-6 6 6" /></svg>
-                </button>
-                <button title="Bawah (X)" onClick={() => setSceneRot((s) => ({ ...s, x: s.x + 15 }))}>
-                  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 6l6 6 6-6" /></svg>
-                </button>
-                <button title="Putar kanan (Y)" onClick={() => setSceneRot((s) => ({ ...s, y: s.y + 18 }))}>
-                  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 4l6 6-6 6" /></svg>
-                </button>
-              </div>
-              <div className="sc-row">
-                <button title="Putar searah jarum jam (Z)" onClick={() => setSceneRot((s) => ({ ...s, z: (s.z || 0) - 15 }))}>
-                  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 10a7 7 0 1011-5.7" /><path d="M14 2v4h-4" /></svg>
-                </button>
-                <button title="Putar berlawanan jarum jam (Z)" onClick={() => setSceneRot((s) => ({ ...s, z: (s.z || 0) + 15 }))}>
-                  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 10a7 7 0 11-11-5.7" /><path d="M6 2v4h4" /></svg>
-                </button>
-              </div>
               <button className="sc-reset" title="Reset tampilan" onClick={() => setSceneRot({ x: -28, y: -22, z: 0 })}>
                 <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 10a7 7 0 1112-4.95" /><path d="M14 2v4h-4" /></svg>
                 Reset
@@ -504,7 +499,7 @@ function TutorialModal({ onClose }) {
         <div className="step-list">
           <div className="step">
             <div className="step-num">1</div>
-            <div className="step-body"><strong>Pilih bangun ruang.</strong> Klik salah satu dari empat bangun di atas (balok, prisma segitiga, limas segitiga, atau limas segiempat).</div>
+            <div className="step-body"><strong>Pilih bangun ruang.</strong> Klik salah satu dari empat bangun di atas (kubus, prisma segitiga, limas segitiga, atau limas segiempat).</div>
           </div>
           <div className="step">
             <div className="step-num">2</div>
