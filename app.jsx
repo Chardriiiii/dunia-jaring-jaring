@@ -173,6 +173,7 @@ function App() {
     const all = getHints(shapeKey, selected);
     if (all.length) {
       setHintIds(all);
+      setFeedback({ kind: 'info', text: 'Coba klik sisi yang menyala (garis tebal ungu) di papan jaring-jaring.' });
       setTimeout(() => setHintIds([]), 4500);
     } else {
       setFeedback({ kind: 'info', text: 'Tidak ada petunjuk yang bisa diberikan untuk susunan saat ini. Coba urungkan atau mulai ulang.' });
