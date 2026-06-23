@@ -1,16 +1,19 @@
 // 2D grid editor — renders slots for a shape and lets the user click to toggle them.
 
 const { useState, useEffect, useRef, useMemo } = React;
-const uniqueSlots = useMemo(() => {
-  const seen = new Set();
-  return shape.slots.filter(s => {
-    if (seen.has(s.id)) return false;
-    seen.add(s.id);
-    return true;
-  });
-}, [shape.slots]);
 
 function NetEditor({ shape, selected, setSelected, hintIds, tone, showLabels, getSlotColor }) {
+  // ===== Filter slot unik (hapus duplikat) =====
+  const uniqueSlots = useMemo(() => {
+    const seen = new Set();
+    return shape.slots.filter(s => {
+      if (seen.has(s.id)) return false;
+      seen.add(s.id);
+      return true;
+    });
+  }, [shape.slots]);
+  // =====
+
   const slotIndex = useMemo(() => {
     const idx = {};
     for (const s of shape.slots) idx[s.id] = s;
