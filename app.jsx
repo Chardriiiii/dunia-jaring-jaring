@@ -1,22 +1,45 @@
 // Main app — shape selection, scoring, tutorial, validation flow.
 
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
-// pewarnaan tiap bangun datar
+
+// ============================================================
+// PALET WARNA PER SISI (indeks 0 = ALAS, sisanya urutan pemilihan)
+// ============================================================
 const FACE_COLORS = {
   cuboid: [
     '#4338CA', // alas
-    '#818CF8', '#34D399', '#FBBF24', '#FB7185', '#A78BFA', '#60A5FA',
+    '#818CF8', // sisi 1
+    '#34D399', // sisi 2
+    '#FBBF24', // sisi 3
+    '#FB7185', // sisi 4
+    '#A78BFA', // sisi 5
+    '#60A5FA', // sisi 6 (cadangan)
   ],
   triPrism: [
-    '#065F46', '#34D399', '#FBBF24', '#FB7185', '#A78BFA', '#60A5FA',
+    '#065F46', // alas
+    '#34D399',
+    '#FBBF24',
+    '#FB7185',
+    '#A78BFA',
+    '#60A5FA',
   ],
   triPyramid: [
-    '#881337', '#FB7185', '#FBBF24', '#A78BFA', '#60A5FA',
+    '#881337', // alas
+    '#FB7185',
+    '#FBBF24',
+    '#A78BFA',
+    '#60A5FA',
   ],
   sqPyramid: [
-    '#78350F', '#FCD34D', '#FB7185', '#A78BFA', '#60A5FA', '#34D399',
+    '#78350F', // alas
+    '#FCD34D',
+    '#FB7185',
+    '#A78BFA',
+    '#60A5FA',
+    '#34D399',
   ],
 };
+
 // SVG icon mark for each shape (small thumbnail in shape picker)
 function ShapeIcon({ kind }) {
   switch (kind) {
@@ -74,10 +97,13 @@ function App() {
     return o;
   });
 
-//perubahan 2
+  // ============================================================
+  // FUNGSI WARNA UNTUK EDITOR DAN PREVIEW
+  // ============================================================
   const getSlotColor = useCallback((slotId, index) => {
     const palette = FACE_COLORS[shapeKey] || ['#4338CA', '#818CF8', '#34D399', '#FBBF24', '#FB7185', '#A78BFA'];
     if (slotId === shape.basePos) return palette[0];
+    // index adalah urutan dalam selected list (0-based)
     const idx = (index !== undefined && index !== null) ? (index + 1) % palette.length : 1;
     return palette[idx];
   }, [shapeKey, shape.basePos]);
@@ -87,8 +113,8 @@ function App() {
     const idx = selectedList.indexOf(faceId);
     return getSlotColor(faceId, idx);
   }, [selected, getSlotColor]);
-  //===akhir tambahan====//
-  
+  // ============================================================
+
   const pushHistory = useCallback((snapshot) => {
     setHistoryByShape((prev) => ({
       ...prev,
@@ -99,9 +125,7 @@ function App() {
   function handleSelectedChange(next) {
     pushHistory(new Set(selected));
     setSelected(next);
-    // Reset feedback when net changes
     setFeedback(null);
-    // Reset fold to flat
     if (progress > 0) setProgress(0);
   }
 
@@ -131,9 +155,7 @@ function App() {
     try {localStorage.setItem('pmbt_tut_seen', '1');} catch (e) {}
   }
 
-  // Progress tracking: which DISTINCT correct nets the user has found, per shape.
-  // Stored as { shapeKey: [netKey, ...] }. Re-discovering the same arrangement
-  // does NOT increase the count.
+  // Progress tracking
   const [correctByShape, setCorrectByShape] = useState(() => {
     try { return JSON.parse(localStorage.getItem('pmbt_correct') || '{}'); } catch (e) { return {}; }
   });
@@ -165,30 +187,26 @@ function App() {
   const [t, setTweak] = window.useTweaks(TWEAK_DEFAULTS);
 
   // Fold preview
-  const [progress, setProgress] = useState(0); // 0..1
+  const [progress, setProgress] = useState(0);
   const [validated, setValidated] = useState(false);
   const [sceneRot, setSceneRot] = useState({ x: -28, y: -22, z: 0 });
 
-  // DEBUG: expose state to window
   useEffect(() => {
     window.__appState = { progress, validated, selected, shapeKey };
   });
 
-  // Validate handler
   function handleValidate() {
     const result = validateNet(shapeKey, selected);
     if (result.ok) {
       setFeedback({ kind: 'ok', text: result.reason });
-      // Count only NEW (not-yet-found) arrangements for this shape.
       const key = [...selected].sort().join('|');
       setCorrectByShape((m) => {
         const found = m[shapeKey] || [];
-        if (found.includes(key)) return m; // already counted — no increment
+        if (found.includes(key)) return m;
         return { ...m, [shapeKey]: [...found, key] };
       });
       setValidated(true);
       celebrate();
-      // Animate fold to 1
       animateProgressTo(1, foldDuration());
     } else {
       setFeedback({ kind: 'err', text: result.reason });
@@ -216,12 +234,10 @@ function App() {
     tick();
   }
 
-  // Reset validation when net changes
   useEffect(() => {
     if (validated) setValidated(false);
-  }, [selected]); // eslint-disable-line
+  }, [selected]);
 
-  // Confetti
   function celebrate() {
     const colors = ['#FCD34D', '#A78BFA', '#34D399', '#FB7185', '#60A5FA', '#F472B6'];
     const container = document.createElement('div');
@@ -242,8 +258,6 @@ function App() {
 
   // Scene drag-to-rotate
   const sceneRef = useRef(null);
-  // Keep a mutable mirror of the rotation so the drag handler (attached ONCE)
-  // always sees the latest committed value without re-subscribing.
   const rotRef = useRef(sceneRot);
   useEffect(() => { rotRef.current = sceneRot; }, [sceneRot]);
 
@@ -252,13 +266,10 @@ function App() {
     if (!el) return;
     let dragging = false;
     let startX, startY, startRot;
-    let live = null;     // rotation being dragged (not yet committed to state)
+    let live = null;
     let rafId = 0;
-    let sceneEl = null;  // the .scene-rot element we mutate directly
+    let sceneEl = null;
 
-    // Write the transform straight to the DOM — bypassing React entirely — so a
-    // drag never re-renders the (expensive) 3D face tree. We only commit to
-    // React state once, on release. This is what makes dragging buttery.
     function paint() {
       rafId = 0;
       if (!sceneEl || !live) return;
@@ -274,7 +285,7 @@ function App() {
       startRot = { ...rotRef.current };
       live = { ...startRot };
       sceneEl = el.querySelector('.scene-rot');
-      if (sceneEl) sceneEl.style.transition = 'none'; // no easing lag mid-drag
+      if (sceneEl) sceneEl.style.transition = 'none';
       el.style.cursor = 'grabbing';
     }
     function onMove(e) {
@@ -283,8 +294,6 @@ function App() {
       const p = e.touches ? e.touches[0] : e;
       const dx = p.clientX - startX;
       const dy = p.clientY - startY;
-      // Free rotation: no clamp, so the user can flip the model completely.
-      // Hold SHIFT to twist around the Z axis instead of pitching.
       if (e.shiftKey) {
         live = { x: startRot.x, y: startRot.y, z: startRot.z + dx * 0.7 };
       } else {
@@ -298,7 +307,7 @@ function App() {
       el.style.cursor = 'grab';
       if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
       if (sceneEl) sceneEl.style.transition = '';
-      if (live) { rotRef.current = live; setSceneRot(live); } // commit once
+      if (live) { rotRef.current = live; setSceneRot(live); }
     }
 
     el.addEventListener('mousedown', onDown);
@@ -317,9 +326,8 @@ function App() {
       window.removeEventListener('touchend', onUp);
       if (rafId) cancelAnimationFrame(rafId);
     };
-  }, []); // attach ONCE — no re-subscribe per frame
+  }, []);
 
-  // Narration based on current state
   const narrationText = useMemo(() => {
     if (!validated) {
       if (selected.size < shape.meta.faceCount) {
@@ -330,7 +338,6 @@ function App() {
       }
       return { step: selected.size, text: <>Semua sisi terkumpul! Klik <strong>Validasi &amp; Lipat</strong> untuk memeriksa apakah jaring-jaring ini bisa membentuk {shape.meta.shortName}.</> };
     }
-    // Validated true — give fold narration
     const stepIdx = Math.floor(progress * 5);
     const steps = [
     <>Jaring-jaring berhasil terbentuk! Geser slider untuk mulai melipat.</>,
@@ -342,9 +349,6 @@ function App() {
 
     return { step: stepIdx + 1, text: steps[Math.min(steps.length - 1, stepIdx)] };
   }, [selected, validated, progress, shape]);
-
-  // Live 3D preview — folding is always available so the user can see
-  // collisions/overlap even when the net is invalid or incomplete.
 
   return (
     <div className="app">
@@ -402,13 +406,15 @@ function App() {
           </div>
 
           <div className="editor-wrap">
-            <NetEditor shape={shape}
-            selected={selected}
-            setSelected={handleSelectedChange}
-            hintIds={hintIds}
-            tone={shape.meta.faceTint}
-            showLabels={t.showLabels}
-            getSlotColor={getSlotColor}/>
+            <NetEditor
+              shape={shape}
+              selected={selected}
+              setSelected={handleSelectedChange}
+              hintIds={hintIds}
+              tone={shape.meta.faceTint}
+              showLabels={t.showLabels}
+              getSlotColor={getSlotColor}   // <-- DISINI
+            />
           </div>
 
           <div className="editor-toolbar">
@@ -458,13 +464,15 @@ function App() {
           </div>
 
           <div className="preview-wrap" ref={sceneRef}>
-            <FoldPreview shape={shape}
-            selected={selected}
-            progress={progress}
-            tone={shape.meta.faceTint}
-            sceneRot={sceneRot}
-            foldDur={foldDuration()}
-            getFaceColor={getFaceColor}/>
+            <FoldPreview
+              shape={shape}
+              selected={selected}
+              progress={progress}
+              tone={shape.meta.faceTint}
+              sceneRot={sceneRot}
+              foldDur={foldDuration()}
+              getFaceColor={getFaceColor}   // <-- DISINI
+            />
 
             <div className="scene-controls" onClick={(e) => e.stopPropagation()}
             onMouseDown={(e) => e.stopPropagation()}>
