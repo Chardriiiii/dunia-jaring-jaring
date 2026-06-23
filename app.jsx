@@ -1,7 +1,22 @@
 // Main app — shape selection, scoring, tutorial, validation flow.
 
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
-
+// pewarnaan tiap bangun datar
+const FACE_COLORS = {
+  cuboid: [
+    '#4338CA', // alas
+    '#818CF8', '#34D399', '#FBBF24', '#FB7185', '#A78BFA', '#60A5FA',
+  ],
+  triPrism: [
+    '#065F46', '#34D399', '#FBBF24', '#FB7185', '#A78BFA', '#60A5FA',
+  ],
+  triPyramid: [
+    '#881337', '#FB7185', '#FBBF24', '#A78BFA', '#60A5FA',
+  ],
+  sqPyramid: [
+    '#78350F', '#FCD34D', '#FB7185', '#A78BFA', '#60A5FA', '#34D399',
+  ],
+};
 // SVG icon mark for each shape (small thumbnail in shape picker)
 function ShapeIcon({ kind }) {
   switch (kind) {
@@ -58,6 +73,22 @@ function App() {
     for (const k of Object.keys(SHAPES)) o[k] = [];
     return o;
   });
+
+//perubahan 2
+  const getSlotColor = useCallback((slotId, index) => {
+    const palette = FACE_COLORS[shapeKey] || ['#4338CA', '#818CF8', '#34D399', '#FBBF24', '#FB7185', '#A78BFA'];
+    if (slotId === shape.basePos) return palette[0];
+    const idx = (index !== undefined && index !== null) ? (index + 1) % palette.length : 1;
+    return palette[idx];
+  }, [shapeKey, shape.basePos]);
+
+  const getFaceColor = useCallback((faceId) => {
+    const selectedList = [...selected];
+    const idx = selectedList.indexOf(faceId);
+    return getSlotColor(faceId, idx);
+  }, [selected, getSlotColor]);
+  //===akhir tambahan====//
+  
   const pushHistory = useCallback((snapshot) => {
     setHistoryByShape((prev) => ({
       ...prev,
