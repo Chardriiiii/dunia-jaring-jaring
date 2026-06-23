@@ -3,7 +3,7 @@
 const { useState, useEffect, useRef, useMemo } = React;
 
 function NetEditor({ shape, selected, setSelected, hintIds, tone, showLabels, getSlotColor }) {
-  // ===== Filter slot unik (hapus duplikat) =====
+  // Filter duplikat slot (untuk jaga-jaga)
   const uniqueSlots = useMemo(() => {
     const seen = new Set();
     return shape.slots.filter(s => {
@@ -12,7 +12,6 @@ function NetEditor({ shape, selected, setSelected, hintIds, tone, showLabels, ge
       return true;
     });
   }, [shape.slots]);
-  // =====
 
   const slotIndex = useMemo(() => {
     const idx = {};
