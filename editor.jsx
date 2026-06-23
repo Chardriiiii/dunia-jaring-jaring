@@ -2,7 +2,7 @@
 
 const { useState, useEffect, useRef, useMemo } = React;
 
-function NetEditor({ shape, selected, setSelected, hintIds, tone, showLabels }) {
+function NetEditor({ shape, selected, setSelected, hintIds, tone, showLabels, getSlotColor }) {
   const slotIndex = useMemo(() => {
     const idx = {};
     for (const s of shape.slots) idx[s.id] = s;
@@ -25,35 +25,31 @@ function NetEditor({ shape, selected, setSelected, hintIds, tone, showLabels }) 
         maxY = Math.max(maxY, s.gy + s.gh);
       }
     }
-    // Add some padding
     const pad = 0.2;
     return { minX: minX - pad, minY: minY - pad, maxX: maxX + pad, maxY: maxY + pad };
   }, [shape]);
 
-  // Scale to fit viewport
-  const CELL = 60; // pixels per grid unit
+  const CELL = 60;
   const svgW = (bounds.maxX - bounds.minX) * CELL;
   const svgH = (bounds.maxY - bounds.minY) * CELL;
 
   function toggleSlot(id) {
-    if (id === shape.basePos) return; // locked
+    if (id === shape.basePos) return;
     const isActive = selected.has(id);
     if (isActive) {
       const next = new Set(selected);
       next.delete(id);
       setSelected(next);
     } else {
-      // can only add if at-cap; check adjacency to existing selected slot
       if (selected.size >= shape.meta.faceCount) return;
       const adj = shape.adjacency[id] || [];
-      if (!adj.some(a => selected.has(a.id))) return; // must be adjacent
+      if (!adj.some(a => selected.has(a.id))) return;
       const next = new Set(selected);
       next.add(id);
       setSelected(next);
     }
   }
 
-  // Determine which slots are eligible (adjacent to selected + not already selected + capacity left)
   const eligible = useMemo(() => {
     const elig = new Set();
     if (selected.size >= shape.meta.faceCount) return elig;
@@ -109,7 +105,6 @@ function NetEditor({ shape, selected, setSelected, hintIds, tone, showLabels }) 
   function labelFor(slot, idx) {
     if (slot.id === shape.basePos) return 'ALAS';
     if (!showLabels) return '';
-    // For cuboid, label based on relative position
     return `${idx + 1}`;
   }
 
@@ -123,7 +118,7 @@ function NetEditor({ shape, selected, setSelected, hintIds, tone, showLabels }) 
           const isActive = selected.has(slot.id);
           if (isActive) return null;
           const isEligible = eligible.has(slot.id);
-          if (!isEligible) return null; // hide non-eligible empty slots
+          if (!isEligible) return null;
           const poly = getPolygon(slot);
           const isHint = hintIds && hintIds.includes(slot.id);
           return (
@@ -144,13 +139,15 @@ function NetEditor({ shape, selected, setSelected, hintIds, tone, showLabels }) 
           const center = getCenter(slot);
           const isBase = slot.id === shape.basePos;
           const idx = selectedList.indexOf(slot.id);
+          // ===== WARNA DIATUR DI SINI =====
+          const color = getSlotColor ? getSlotColor(slot.id, idx) : '#818CF8';
           return (
             <g key={slot.id} data-slot-id={slot.id}
                className={`slot active tone-${tone} ${isBase ? 'base locked' : ''}`}
                onClick={() => toggleSlot(slot.id)}>
               {poly.type === 'rect'
-                ? <rect className="slot-fill" x={poly.x} y={poly.y} width={poly.w} height={poly.h} rx="4" />
-                : <polygon className="slot-fill" points={poly.points} />
+                ? <rect className="slot-fill" x={poly.x} y={poly.y} width={poly.w} height={poly.h} rx="4" fill={color} stroke={color} />
+                : <polygon className="slot-fill" points={poly.points} fill={color} stroke={color} />
               }
               <text className="slot-label" x={center.x} y={center.y}>
                 {labelFor(slot, idx)}
