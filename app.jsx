@@ -407,7 +407,8 @@ function App() {
             setSelected={handleSelectedChange}
             hintIds={hintIds}
             tone={shape.meta.faceTint}
-            showLabels={t.showLabels} />
+            showLabels={t.showLabels}
+            getSlotColor={getSlotColor}/>
           </div>
 
           <div className="editor-toolbar">
@@ -462,7 +463,8 @@ function App() {
             progress={progress}
             tone={shape.meta.faceTint}
             sceneRot={sceneRot}
-            foldDur={foldDuration()} />
+            foldDur={foldDuration()}
+            getFaceColor={getFaceColor}/>
 
             <div className="scene-controls" onClick={(e) => e.stopPropagation()}
             onMouseDown={(e) => e.stopPropagation()}>
