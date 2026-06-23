@@ -270,6 +270,10 @@ button {
   stroke-dasharray: 4 4;
   transition: fill var(--t-fast), stroke var(--t-fast);
 }
+.slot.eligible .slot-fill {
+  fill: transparent;
+  stroke: rgba(99, 102, 241, 0.45);
+}
 .slot:hover .slot-fill {
   fill: rgba(99, 102, 241, 0.14) !important;
   stroke: rgba(99, 102, 241, 0.7) !important;
