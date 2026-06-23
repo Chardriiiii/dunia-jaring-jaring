@@ -1,19 +1,13 @@
 // 3D fold preview — FLAT single-container render.
-//
-// All faces live in ONE `preserve-3d` scene, each positioned by a matrix3d that
-// fold3d.jsx computes from the face's REAL flat polygon (the same vertices the
-// 2D editor draws). The fold geometry is therefore identical to the validator —
-// what you lay out is exactly what folds, for every arrangement (strip, fan,
-// slant faces, …). No nested per-face frames, so no drift.
-
-const PREVIEW_CELL = 90; // pixels per grid unit in the 3D preview
+const PREVIEW_CELL = 90;
 
 const { useMemo } = React;
 
-// One folded face: a div the size of the face's flat bounding box, clipped to
-// the exact polygon outline and mapped into the folded world by `matrix`.
-function FaceTile({ face, tone }) {
+function FaceTile({ face, tone, getFaceColor }) {
   const isTri = face.kind !== 'square';
+  // ===== WARNA DIATUR DI SINI =====
+  const color = getFaceColor ? getFaceColor(face.id) : '#818CF8';
+
   let cls = 'face-shape';
   cls += isTri ? ' triangle' : ' square';
   if (tone) cls += ` tone-${tone}`;
@@ -30,7 +24,12 @@ function FaceTile({ face, tone }) {
       transform: face.matrix,
       transformOrigin: '0 0',
     }}>
-      <div className={cls} style={{ width: face.w, height: face.h, clipPath }}>
+      <div className={cls} style={{
+        width: face.w,
+        height: face.h,
+        clipPath,
+        background: color,   // <-- INLINE BACKGROUND
+      }}>
         {face.isBase ? (
           <span className="face-label" style={{
             position: 'absolute',
@@ -43,10 +42,7 @@ function FaceTile({ face, tone }) {
   );
 }
 
-function FoldPreview({ shape, selected, progress, tone, sceneRot, foldDur }) {
-  // Solve correct fold directions for this arrangement; falls back to the
-  // "fold away" heuristic inside fold3d when no closing solution exists (so even
-  // an incomplete, open net still previews sensibly while being built).
+function FoldPreview({ shape, selected, progress, tone, sceneRot, foldDur, getFaceColor }) {
   const signs = useMemo(() => {
     if (typeof solveSigns !== 'function') return null;
     try { return solveSigns(shape, new Set(selected)); } catch (e) { return null; }
@@ -80,7 +76,7 @@ function FoldPreview({ shape, selected, progress, tone, sceneRot, foldDur }) {
         transform: `rotateX(${sceneRot.x}deg) rotateY(${sceneRot.y}deg) rotateZ(${sceneRot.z || 0}deg)`,
         transition: foldDur ? `transform 0ms` : undefined,
       }}>
-        {faces.map(f => <FaceTile key={f.id} face={f} tone={tone} />)}
+        {faces.map(f => <FaceTile key={f.id} face={f} tone={tone} getFaceColor={getFaceColor} />)}
       </div>
     </div>
   );
