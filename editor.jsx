@@ -1,6 +1,14 @@
 // 2D grid editor — renders slots for a shape and lets the user click to toggle them.
 
 const { useState, useEffect, useRef, useMemo } = React;
+const uniqueSlots = useMemo(() => {
+  const seen = new Set();
+  return shape.slots.filter(s => {
+    if (seen.has(s.id)) return false;
+    seen.add(s.id);
+    return true;
+  });
+}, [shape.slots]);
 
 function NetEditor({ shape, selected, setSelected, hintIds, tone, showLabels, getSlotColor }) {
   const slotIndex = useMemo(() => {
@@ -114,7 +122,7 @@ function NetEditor({ shape, selected, setSelected, hintIds, tone, showLabels, ge
     <div className="editor-grid" style={{ width: svgW, height: svgH }}>
       <svg width={svgW} height={svgH} viewBox={`0 0 ${svgW} ${svgH}`} style={{ display: 'block' }}>
         {/* Render in 2 passes: inactive (eligible/empty) first, then active on top */}
-        {shape.slots.map(slot => {
+        {uniqueSlots.map(slot => {
           const isActive = selected.has(slot.id);
           if (isActive) return null;
           const isEligible = eligible.has(slot.id);
@@ -132,7 +140,7 @@ function NetEditor({ shape, selected, setSelected, hintIds, tone, showLabels, ge
             </g>
           );
         })}
-        {shape.slots.map(slot => {
+        {uniqueSlots.map(slot => {
           const isActive = selected.has(slot.id);
           if (!isActive) return null;
           const poly = getPolygon(slot);
